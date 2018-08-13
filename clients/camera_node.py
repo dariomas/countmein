@@ -1,12 +1,14 @@
 import argparse
 import logging
+from imutils.video import WebcamVideoStream
+from imutils.video import FPS
 import os
 import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from uuid import getnode
-
+import imutils
 import cv2
 import numpy
 import requests
@@ -40,6 +42,7 @@ KEY_SENT = "sent"            # true if a face is sent
 KEY_TRACKER = "trk"          # tracker object
 KEY_DETECTION = "detection"  # last face detection time
 KEY_CREATION = "creation"    # tracker creation time
+O_SIZE = 500                 # resize video to 500px (to speedup processing)
 
 api_url = urllib.parse.urljoin(args.addr, "/v1/events/")
 trackers = []
@@ -48,20 +51,105 @@ node_id = getnode()
 executor = ThreadPoolExecutor(max_workers=4)
 file_path = os.path.dirname(__file__)
 xml_path = os.path.join(file_path, "haarcascade_frontalface_alt_tree.xml")
+# load the known faces and embeddings along with OpenCV's Haar
+# cascade for face detection
+logging.info("[INFO] loading face detectors..." + str(node_id))
 faceCascade = cv2.CascadeClassifier(xml_path)
-video = cv2.VideoCapture(0 if args.video is None else args.video)
-if args.fps is not None:
-    video.set(cv2.CAP_PROP_FPS, args.fps)
-fps = video.get(cv2.CAP_PROP_FPS)
-video_w, video_h = int(video.get(3)), int(video.get(4))
+ffDetector = cv2.CascadeClassifier("/usr/share/OpenCV/haarcascades/haarcascade_frontalface_default.xml")
+pfDetector = cv2.CascadeClassifier("/usr/share/OpenCV/haarcascades/haarcascade_profileface.xml")
+ubDetector = cv2.CascadeClassifier("/usr/share/OpenCV/haarcascades/haarcascade_upperbody.xml")
+# Opencv pre-trained SVM with HOG people features
+HOGdetector = cv2.HOGDescriptor()
+HOGdetector.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+
+#video = cv2.VideoCapture(0 if args.video is None else args.video)
+video = WebcamVideoStream(src=0 if args.video is None else args.video).start()
+#if args.fps is not None:
+#    video.set(cv2.CAP_PROP_FPS, args.fps)
+#fps = video.get(cv2.CAP_PROP_FPS)
+# grab next frame
+frame = video.read()
+#video_w, video_h = int(video.get(3)), int(video.get(4))
+(video_h, video_w) = frame.shape[:2]
 min_box = (int(video_w * args.min_size), int(video_h * args.min_size))
 max_box = (int(video_w * args.max_size), int(video_h * args.max_size))
 
 
 def detect_faces(frame):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    return faceCascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=3,
-                                        minSize=min_box, maxSize=max_box)
+    facesrects = faceCascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=3, minSize=min_box, maxSize=max_box)
+        # detect front faces in the grayscale frame
+    ffrects = ffDetector.detectMultiScale(gray, scaleFactor=1.05,
+            minNeighbors=3, minSize=(20, 20),
+            flags= cv2.CASCADE_SCALE_IMAGE)
+        # OpenCV returns bounding box coordinates in (x, y, w, h) order
+        # but we need them in (top, right, bottom, left) order, so we
+        # need to do a bit of reordering
+    """ 	ffboxes = [( int(x + w / 2), int(y + h / 2)) for (x, y, w, h) in ffrects]
+    # loop over the recognized faces
+    for (cx, cy) in ffboxes:
+        # draw the predicted face name on the image
+        cv2.drawMarker(rgb, (cx + Ux, cy + Uy), (5, 75, 10), markerType=cv2.MARKER_TRIANGLE_DOWN, thickness=2, line_type=cv2.LINE_AA)
+    """
+    # detect profile faces in the grayscale frame
+    pfrects = pfDetector.detectMultiScale(gray, scaleFactor=1.05,
+            minNeighbors=2, minSize=(20, 20),
+            flags=cv2.CASCADE_SCALE_IMAGE)
+        # OpenCV returns bounding box coordinates in (x, y, w, h) order
+        # but we need them in (top, right, bottom, left) order, so we
+        # need to do a bit of reordering
+    """ 	pfboxes = [( int(x + w / 2), int(y + h / 2)) for (x, y, w, h) in pfrects]
+    # loop over the recognized faces
+    for (cx, cy) in pfboxes:
+        # draw the predicted face name on the image
+        cv2.drawMarker(rgb, (cx + Ux, cy+ Uy), (5, 125, 10), markerType=cv2.MARKER_TRIANGLE_UP, thickness=2, line_type=cv2.LINE_AA)
+    """
+    # detect upper bodyes in the grayscale frame
+    ubrects = ubDetector.detectMultiScale(gray, scaleFactor=1.1,
+            minNeighbors=2, minSize=(20, 20),
+            flags=cv2.CASCADE_SCALE_IMAGE)
+        # OpenCV returns bounding box coordinates in (x, y, w, h) order
+        # but we need them in (top, right, bottom, left) order, so we
+        # need to do a bit of reordering
+    """ 	ubboxes = [( int(x + w / 2), int(y + h / 2), x + Ux, y + Uy , x + Ux + w, y + Uy + h) for (x, y, w, h) in ubrects]
+    # loop over the recognized faces
+    for (cx, cy, ux, uy, lx, ly) in ubboxes:
+        # draw the predicted face name on the image
+        cv2.drawMarker(rgb, (cx + Ux, cy + Uy), (5, 254, 10), markerType=cv2.MARKER_DIAMOND, thickness=2, line_type=cv2.LINE_AA)
+        cv2.rectangle(rgb, (ux + 1, uy + 1), (lx , ly), (5, 255, 20), 1)
+    """	#return
+
+#def HOGdetect_person(gray, rgb, Ux = 0, Uy = 0):
+    #if gray.shape[0] < 128 or gray.shape[1] < 64:
+    #	roi = cv2.resize(gray, (int(gray.shape[1] * 8), int(gray.shape[0] * 8)))
+    #else:
+    #	roi = gray
+
+    #logging.info("Faces detected = " + str(len(hboxes)))
+
+    (rects, weights) = HOGdetector.detectMultiScale(gray, winStride=(4, 4), padding=(8, 8), scale=1.05, useMeanshiftGrouping = True)
+                # OpenCV returns bounding box coordinates in (x, y, w, h) order
+                # but we need them in (top, right, bottom, left) order, so we
+                # need to do a bit of reordering
+    """ 	boxes = [(y, x + w, y + h, x) for (x, y, w, h) in rects]
+    #names = weights
+
+    # loop over the recognized faces
+    for ((top, right, bottom, left), name) in zip(boxes, weights):
+        # draw the predicted face name on the image
+        r = top%255
+        g = np.clip(200 * name, 0 , 255)
+        b = left%255
+        #cv2.rectangle(frame, (left+4, top+4), (right-4, bottom-4),
+        #	np.array((r, g, b)), 2)
+        cx = int((left+right)/2)
+        cy = int((top+bottom)/2)
+        cv2.drawMarker(rgb, (cx + Ux, cy + Uy),np.array((r, g, b)),markerType=cv2.MARKER_TILTED_CROSS, thickness=2, line_type=cv2.LINE_AA)
+        y = top - 15 if top - 15 > 15 else top + 15
+        y = cy - 15 if cy - 15 > 15 else cy + 15
+        cv2.putText(rgb, str(name), (left + Ux, y + Uy), cv2.FONT_HERSHEY_SIMPLEX, 0.5, np.array((r, g, b)), 1)
+    """
+    return rects
 
 
 def track_unknown_faces(faces, frame):
@@ -139,24 +227,25 @@ def send_request(face):
 
 
 last_detection = time.time()
-output_size = (600, int(600 * video_h / video_w))
+output_size = (O_SIZE, int(O_SIZE * video_h / video_w))
 while True:
-    ret, frame = video.read()
-    if not ret:
-        break
-
-    update_trackers(frame)
+    #ret, frame = video.read()
+    frame = video.read()
+    #if not ret:
+    #    break
+    frame = imutils.resize(frame, width=O_SIZE)
+    #update_trackers(frame)
     if time.time() - last_detection > args.detection_delay:
         faces = detect_faces(frame)
-        track_unknown_faces(faces, frame)
+        #track_unknown_faces(faces, frame)
         last_detection = time.time()
 
     if not args.headless:
         draw_rectangles(frame)
-        cv2.imshow("video", cv2.resize(frame, output_size))
+        cv2.imshow("video", frame) #cv2.resize(frame, output_size))
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-
-video.release()
+video.stop()
+#video.release()
 cv2.destroyAllWindows()
 executor.shutdown(wait=True)
