@@ -1,5 +1,6 @@
 import argparse
 import logging
+from imutils.object_detection import non_max_suppression
 from imutils.video import WebcamVideoStream
 from imutils.video import FPS
 import os
@@ -10,7 +11,7 @@ from io import BytesIO
 from uuid import getnode
 import imutils
 import cv2
-import numpy
+import numpy as np
 import requests
 
 logging.basicConfig(level=logging.DEBUG)
@@ -53,7 +54,8 @@ file_path = os.path.dirname(__file__)
 xml_path = os.path.join(file_path, "haarcascade_frontalface_alt_tree.xml")
 # load the known faces and embeddings along with OpenCV's Haar
 # cascade for face detection
-logging.info("[INFO] loading face detectors..." + str(node_id))
+logging.info("[INFO] Node ID: " + str(node_id))
+logging.info("[INFO] loading face detectors... ")
 faceCascade = cv2.CascadeClassifier(xml_path)
 ffDetector = cv2.CascadeClassifier("/usr/share/OpenCV/haarcascades/haarcascade_frontalface_default.xml")
 pfDetector = cv2.CascadeClassifier("/usr/share/OpenCV/haarcascades/haarcascade_profileface.xml")
@@ -77,7 +79,10 @@ max_box = (int(video_w * args.max_size), int(video_h * args.max_size))
 
 def detect_faces(frame):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    rects = []
     facesrects = faceCascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=3, minSize=min_box, maxSize=max_box)
+    rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in facesrects])
+    print(*rects)
         # detect front faces in the grayscale frame
     ffrects = ffDetector.detectMultiScale(gray, scaleFactor=1.05,
             minNeighbors=3, minSize=(20, 20),
@@ -85,6 +90,8 @@ def detect_faces(frame):
         # OpenCV returns bounding box coordinates in (x, y, w, h) order
         # but we need them in (top, right, bottom, left) order, so we
         # need to do a bit of reordering
+    rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in ffrects])
+    print(*rects)
     """ 	ffboxes = [( int(x + w / 2), int(y + h / 2)) for (x, y, w, h) in ffrects]
     # loop over the recognized faces
     for (cx, cy) in ffboxes:
@@ -98,6 +105,8 @@ def detect_faces(frame):
         # OpenCV returns bounding box coordinates in (x, y, w, h) order
         # but we need them in (top, right, bottom, left) order, so we
         # need to do a bit of reordering
+    rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in pfrects])
+    print(*rects)
     """ 	pfboxes = [( int(x + w / 2), int(y + h / 2)) for (x, y, w, h) in pfrects]
     # loop over the recognized faces
     for (cx, cy) in pfboxes:
@@ -111,6 +120,8 @@ def detect_faces(frame):
         # OpenCV returns bounding box coordinates in (x, y, w, h) order
         # but we need them in (top, right, bottom, left) order, so we
         # need to do a bit of reordering
+    rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in ubrects])
+    print(*rects)
     """ 	ubboxes = [( int(x + w / 2), int(y + h / 2), x + Ux, y + Uy , x + Ux + w, y + Uy + h) for (x, y, w, h) in ubrects]
     # loop over the recognized faces
     for (cx, cy, ux, uy, lx, ly) in ubboxes:
@@ -127,7 +138,7 @@ def detect_faces(frame):
 
     #logging.info("Faces detected = " + str(len(hboxes)))
 
-    (rects, weights) = HOGdetector.detectMultiScale(gray, winStride=(4, 4), padding=(8, 8), scale=1.05, useMeanshiftGrouping = True)
+    (hogrects, weights) = HOGdetector.detectMultiScale(gray, winStride=(4, 4), padding=(8, 8), scale=1.05, useMeanshiftGrouping = True)
                 # OpenCV returns bounding box coordinates in (x, y, w, h) order
                 # but we need them in (top, right, bottom, left) order, so we
                 # need to do a bit of reordering
@@ -149,7 +160,15 @@ def detect_faces(frame):
         y = cy - 15 if cy - 15 > 15 else cy + 15
         cv2.putText(rgb, str(name), (left + Ux, y + Uy), cv2.FONT_HERSHEY_SIMPLEX, 0.5, np.array((r, g, b)), 1)
     """
-    return rects
+    # Applies non-max supression from imutils package to kick-off overlapped
+    # boxes
+    rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in hogrects])
+    #rects = np.concatenate(rects, np.array([]))
+    print(*rects)
+    print("====================")
+    result = non_max_suppression(rects, probs=None, overlapThresh=0.65)
+
+    return result
 
 
 def track_unknown_faces(faces, frame):
@@ -172,7 +191,7 @@ def track_unknown_faces(faces, frame):
                             KEY_PID: person_id,
                             KEY_DETECTION: time.time(),
                             KEY_CREATION: time.time(),
-                            KEY_FACE: numpy.copy(frame[y:y + h, x:x + w])
+                            KEY_FACE: np.copy(frame[y:y + h, x:x + w])
                             })
             person_id += 1
 
@@ -193,7 +212,7 @@ def update_trackers(frame):
                 fr_y = max(0, min(y, video_h))
                 to_x = min(x + w, video_w)
                 to_y = min(y + h, video_h)
-                t[KEY_FACE] = numpy.copy(frame[fr_y:to_y, fr_x:to_x])
+                t[KEY_FACE] = np.copy(frame[fr_y:to_y, fr_x:to_x])
         elif time.time() - t[KEY_DETECTION] >= FAILURE_DELAY:
             if t[KEY_DETECTION] - t[KEY_CREATION] > args.send_delay \
                and time.time() - t[KEY_CREATION] > args.send_delay:
@@ -204,13 +223,19 @@ def update_trackers(frame):
 
 
 def draw_rectangles(frame):
-    for t in trackers:
+    if len(trackers) == 0:
+	    return
+    # draw the final bounding boxes
+    for (xA, yA, xB, yB) in trackers:
+        cv2.rectangle(frame, (xA, yA), (xB, yB), (0, 255, 0), 2)
+    return
+"""     for t in trackers:
         x, y, w, h = t[KEY_BOX]
         colour = (0, 255, 0) if KEY_SENT in t else (255, 0, 0)
         cv2.rectangle(frame, (x, y), (x + w, y + h), colour, 2)
         cv2.putText(frame, str(t[KEY_PID]), (x, y), cv2.FONT_HERSHEY_DUPLEX, 1,
                     colour)
-
+ """
 
 def send_request(face):
     encoded = cv2.imencode(".jpg", face)[1]
@@ -236,7 +261,7 @@ while True:
     frame = imutils.resize(frame, width=O_SIZE)
     #update_trackers(frame)
     if time.time() - last_detection > args.detection_delay:
-        faces = detect_faces(frame)
+        trackers = detect_faces(frame)
         #track_unknown_faces(faces, frame)
         last_detection = time.time()
 
