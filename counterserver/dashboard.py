@@ -10,10 +10,10 @@ template_env = jinja2.Environment(loader=loader)
 
 def on_get(persistence_mgr):
     time_24h_ago = datetime.now() - timedelta(days=1)
-    time_10d_ago = datetime.now() - timedelta(days=10)
+    time_10d_ago = datetime.now() - timedelta(hours=1)
 
     last_24h = persistence_mgr.get_events(time_24h_ago, None, "hour")
-    last_10d = persistence_mgr.get_events(time_10d_ago, None, "day")
+    last_10d = persistence_mgr.get_events(time_10d_ago, None, "min")
 
     last_15faces = []
     events_w_face = persistence_mgr.get_events(time_10d_ago, None, None,

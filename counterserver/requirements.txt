@@ -1,0 +1,11 @@
+numpy
+imutils
+opencv-python
+requests
+gunicorn 
+hug 
+telepot 
+pymongo 
+cognitive_face 
+yapsy 
+jinja2

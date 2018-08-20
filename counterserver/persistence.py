@@ -20,7 +20,8 @@ class PersistenceManager():
             "month": "%Y-%m",
             "week": "%YW%U",
             "day": "%Y-%m-%d",
-            "hour": "%Y-%m-%dT%H:00"
+            "hour": "%Y-%m-%dT%H:00",
+            "min": "%Y-%m-%dT%H:%M",
         }
 
     def _cast_document(self, document):
@@ -78,7 +79,6 @@ class PersistenceManager():
 
         # Group stage
         if granularity is None:
-            # replace image with a boolean: images must be retrieved one by one
             pipeline.append({
                 "$project": {
                     IMAGE_KEY: {"$cond": ["$"+IMAGE_KEY, True, False]},
@@ -96,9 +96,10 @@ class PersistenceManager():
                         "format": self.granularity_format[granularity],
                         "date": "$time"
                     }
-                }
+                },
+                    TYPE_KEY: 1,
             }
-            group_dict = {"_id": "$datelabel", "count": {"$sum": 1}}
+            group_dict = {"_id": "$datelabel", "count": {"$sum": "$type"}, "max": {"$max": "$type"}, "avg": {"$avg": "$type"}, "events": {"$sum": 1}}
             sort_dict = {"_id": pymongo.ASCENDING}
             pipeline.append({"$project": project_dict})
             pipeline.append({"$group": group_dict})

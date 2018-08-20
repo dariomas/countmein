@@ -34,6 +34,7 @@ def post_event(response, event_time: types.GreaterThan(0)=None,
             "walk by" event).
         event_image: an optional image associate with the event.
     """
+    logging.info("Node ID: %s  -  Faces: %s", str(node_id), str(event_type))
     if event_time is None:
         event_time = int(time.time())
 
@@ -75,7 +76,7 @@ def get_search(response,
 
 @hug.get("/events/stats", version=1)
 def get_stats(response,
-              granularity: types.OneOf(("month", "week", "day", "hour")),
+              granularity: types.OneOf(("month", "week", "day", "hour", "min")),
               from_time: types.GreaterThan(0)=0,
               to_time: types.GreaterThan(0)=None,
               limit: types.GreaterThan(0)=None):

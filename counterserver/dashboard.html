@@ -13,7 +13,7 @@
         (function poll() {
             setTimeout(function() {
                 $.ajax({
-                    url: "v1/events/search?from_time=" + lastChecked,
+                    url: "v1/events/stats?granularity=min&from_time=" + lastChecked,
                     type: "GET",
                     success: function(data) {
                         if (lastData == -1) {
@@ -26,7 +26,7 @@
                     complete: poll,
                     timeout: 5000
                 })
-            }, 3000);
+            }, 30000);
         })();
     </script>
     <style>
@@ -76,8 +76,8 @@
                 data: {
                     labels: [{% for e in last_24h %}"{{ e._id|e }}",{% endfor %}],
                     datasets: [{
-                        label: '# of events',
-                        data: [{% for e in last_24h %}{{ e.count|e }},{% endfor %}],
+                        label: 'average # of events',
+                        data: [{% for e in last_24h %}{{ e.avg|e }},{% endfor %}],
                         borderColor: "rgba(239,116,111,1)",
                         backgroundColor: "rgba(239,116,111,0.4)",
                     }]
@@ -98,7 +98,7 @@
     </div>
 
     <div class="card">
-        <h2>Last 10 days</h2>
+        <h2>Last 1 hour</h2>
         <canvas id="chart2"></canvas>
         <script>
             var myChart = new Chart(document.getElementById("chart2"), {
@@ -117,7 +117,7 @@
                         xAxes: [{
                             type: 'time',
                             time: {
-                                unit: 'day'
+                                unit: 'minute'
                             }
                         }]
                     }
